@@ -5,6 +5,7 @@ export interface UserProfile {
     education_level: 'school' | 'college' | null
     board: string | null
     class_grade: string | null
+    course_program: string | null
     created_at: string
     updated_at: string
 }

@@ -1,9 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateWithRetry } from '@/lib/groq'
+import { searchWeb } from '@/lib/google-search'
 
 // Simple in-memory cache
 const cache = new Map<string, { data: any, timestamp: number }>()
 const CACHE_TTL = 1000 * 60 * 60 * 24 // 24 hours
+
+// Search for official syllabus information
+async function searchOfficialSyllabus(board: string, classGrade: string, subject?: string): Promise<string> {
+    try {
+        const query = subject
+            ? `${board} ${classGrade} ${subject} official syllabus chapters list 2024`
+            : `${board} ${classGrade} all subjects list official syllabus 2024`
+
+        const results = await searchWeb(query, 5)
+
+        if (results.length === 0) {
+            return 'No web search results found.'
+        }
+
+        // Format search results for LLM context
+        return results.map((r, i) =>
+            `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.displayLink}`
+        ).join('\n\n')
+    } catch (error) {
+        console.error('Web search error:', error)
+        return 'Web search unavailable.'
+    }
+}
 
 export async function POST(request: NextRequest) {
     let body: any = {}
@@ -42,7 +66,10 @@ export async function POST(request: NextRequest) {
 
     try {
         if (searchType === 'subjects') {
-            const prompt = `You are an expert education curriculum specialist. Find ALL subjects for:
+            // First, search the web for official syllabus information
+            const webSearchResults = await searchOfficialSyllabus(board, classGrade)
+
+            const prompt = `You are an expert education curriculum specialist. Find ALL subjects for this specific student:
 
 STUDENT PROFILE:
 - Country: ${country}
@@ -50,25 +77,31 @@ STUDENT PROFILE:
 - Board/University/Curriculum: ${board}
 - Class/Grade/Year: ${classGrade}
 
-IMPORTANT INSTRUCTIONS:
-1. Use OFFICIAL syllabus from the specified board (e.g., CBSE, ICSE, State Board, IB, Cambridge, AP, etc.)
-2. Include ALL compulsory subjects for this grade
-3. Include common elective subjects
-4. Use the EXACT subject names as per the official curriculum
-5. For Indian boards, include subjects like Hindi, English, Mathematics, Science (or Physics/Chemistry/Biology for higher classes), Social Science, etc.
-6. For college/university, include department-specific subjects
+WEB SEARCH RESULTS (use this for accuracy):
+${webSearchResults}
+
+CRITICAL INSTRUCTIONS:
+1. Use the OFFICIAL syllabus from "${board}" for "${classGrade}" - NOT generic subjects
+2. The subjects MUST match exactly what students in this specific board and grade study
+3. For Indian boards:
+   - CBSE Class 10: English, Hindi/Sanskrit, Mathematics, Science, Social Science, etc.
+   - ICSE: Different subject names than CBSE
+   - State Boards: May have regional language subjects
+4. For college: Department-specific subjects based on the course
+5. Include subject codes if they exist for this board
+6. Use the web search results above to verify accuracy
 
 Return ONLY a valid JSON array with this exact structure:
 [
   {
     "id": "unique_slug_lowercase",
-    "name": "Official Subject Name",
-    "code": "Subject Code (LEAVE EMPTY if not applicable)",
-    "description": "2-3 sentence description of what this subject covers according to the official syllabus"
+    "name": "Official Subject Name as per ${board}",
+    "code": "Subject Code (empty if not applicable)",
+    "description": "2-3 sentence description from official syllabus"
   }
 ]
 
-Return ONLY the JSON array. No explanation, no markdown code blocks.`
+Return ONLY the JSON array. No explanation, no markdown.`
 
             const text = await generateWithRetry(prompt)
 
@@ -85,7 +118,10 @@ Return ONLY the JSON array. No explanation, no markdown code blocks.`
         }
 
         if (searchType === 'chapters') {
-            const prompt = `You are an expert education curriculum specialist. Find the COMPLETE official syllabus for:
+            // First, search the web for official chapter list
+            const webSearchResults = await searchOfficialSyllabus(board, classGrade, subject)
+
+            const prompt = `You are an expert education curriculum specialist. Find the COMPLETE official chapter list for:
 
 STUDENT PROFILE:
 - Country: ${country}
@@ -93,28 +129,33 @@ STUDENT PROFILE:
 - Class/Grade/Year: ${classGrade}
 - Subject: ${subject}
 
+WEB SEARCH RESULTS (use this for accuracy):
+${webSearchResults}
+
 CRITICAL INSTRUCTIONS:
-1. Use the OFFICIAL syllabus from ${board} for Class/Grade ${classGrade}
-2. List ALL chapters/units in the EXACT order they appear in the official textbook
-3. Use the OFFICIAL chapter names (not generic names)
-4. For example, if this is CBSE Class 10 Mathematics, use actual NCERT chapter names like "Real Numbers", "Polynomials", "Pair of Linear Equations in Two Variables", etc.
-5. Include accurate estimated study hours based on chapter difficulty and size
-6. List 3-5 KEY concepts covered in each chapter
-7. DO NOT make up chapters - use only official curriculum
+1. Use the OFFICIAL syllabus/textbook from "${board}" for "${classGrade}" "${subject}"
+2. List chapters in the EXACT order they appear in the official textbook
+3. Use the OFFICIAL chapter names - not generic names
+4. Examples of specific chapter names:
+   - CBSE Class 10 Math: "Real Numbers", "Polynomials", "Pair of Linear Equations in Two Variables"
+   - CBSE Class 10 Science: "Chemical Reactions and Equations", "Acids, Bases and Salts"
+   - ICSE uses different chapter names than CBSE
+5. Use the web search results above to verify chapter names
+6. Include 3-5 key concepts for each chapter
 
 Return ONLY a valid JSON array with this exact structure:
 [
   {
     "id": "chapter_slug",
-    "name": "Official Chapter/Unit Name from Textbook",
+    "name": "Official Chapter Name from ${board} Textbook",
     "chapterNumber": 1,
-    "description": "What this chapter covers (2-3 sentences from official syllabus)",
-    "concepts": ["Key Concept 1", "Key Concept 2", "Key Concept 3", "Key Concept 4"],
+    "description": "What this chapter covers (from official syllabus)",
+    "concepts": ["Key Concept 1", "Key Concept 2", "Key Concept 3"],
     "estimatedHours": 8
   }
 ]
 
-Return ONLY the JSON array. No explanation, no markdown code blocks.`
+Return ONLY the JSON array. No explanation, no markdown.`
 
             const text = await generateWithRetry(prompt)
 
@@ -158,7 +199,7 @@ Return ONLY a valid JSON array:
   }
 ]
 
-Return ONLY the JSON array. No explanation, no markdown code blocks.`
+Return ONLY the JSON array. No explanation, no markdown.`
 
             const text = await generateWithRetry(prompt)
 

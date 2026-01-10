@@ -7,12 +7,19 @@ const cache = new Map<string, { data: any, timestamp: number }>()
 const CACHE_TTL = 1000 * 60 * 60 * 24 // 24 hours
 
 // Search for official syllabus information
-async function searchOfficialSyllabus(board: string, classGrade: string, subject?: string): Promise<string> {
+async function searchOfficialSyllabus(board: string, classGrade: string, subjectOrCourse?: string): Promise<string> {
     try {
-        const query = subject
-            ? `${board} ${classGrade} ${subject} official syllabus chapters list 2024`
-            : `${board} ${classGrade} all subjects list official syllabus 2024`
+        // Build a specific search query
+        let query: string
+        if (subjectOrCourse) {
+            // For college: "SPPU B.Sc Computer Science 1st year syllabus subjects 2024"
+            // For chapters: "CBSE Class 10 Mathematics chapters list 2024"
+            query = `${board} ${subjectOrCourse} ${classGrade} official syllabus 2024`
+        } else {
+            query = `${board} ${classGrade} all subjects list official syllabus 2024`
+        }
 
+        console.log('Web search query:', query)
         const results = await searchWeb(query, 5)
 
         if (results.length === 0) {
@@ -41,10 +48,10 @@ export async function POST(request: NextRequest) {
         )
     }
 
-    const { country, educationLevel, board, classGrade, searchType, subject } = body
+    const { country, educationLevel, board, classGrade, searchType, subject, courseProgram } = body
 
     // Debug: Log incoming request
-    console.log('Curriculum API request:', { country, educationLevel, board, classGrade, searchType, subject })
+    console.log('Curriculum API request:', { country, educationLevel, board, classGrade, courseProgram, searchType, subject })
 
     const apiKey = process.env.GROQ_API_KEY
 
@@ -55,7 +62,7 @@ export async function POST(request: NextRequest) {
         )
     }
 
-    const cacheKey = JSON.stringify({ country, educationLevel, board, classGrade, searchType, subject })
+    const cacheKey = JSON.stringify({ country, educationLevel, board, classGrade, courseProgram, searchType, subject })
     if (cache.has(cacheKey)) {
         const cached = cache.get(cacheKey)!
         if (Date.now() - cached.timestamp < CACHE_TTL) {
@@ -66,42 +73,73 @@ export async function POST(request: NextRequest) {
 
     try {
         if (searchType === 'subjects') {
-            // First, search the web for official syllabus information
-            const webSearchResults = await searchOfficialSyllabus(board, classGrade)
+            // For college, include course program in search
+            const webSearchResults = await searchOfficialSyllabus(board, classGrade, courseProgram)
 
-            const prompt = `You are an expert education curriculum specialist. Find ALL subjects for this specific student:
+            const isCollege = educationLevel === 'college'
+            const courseInfo = courseProgram ? `\n- Course/Program: ${courseProgram}` : ''
+
+            let prompt: string
+
+            if (isCollege && courseProgram) {
+                // Strict prompt for college courses
+                prompt = `You are an expert university curriculum specialist for ${board}.
+
+STUDENT PROFILE:
+- University: ${board}
+- Course/Program: ${courseProgram}
+- Year: ${classGrade}
+- Country: ${country}
+
+${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `WEB SEARCH RESULTS:\n${webSearchResults}\n` : ''}
+
+TASK: Return the EXACT subjects taught in "${courseProgram}" at "${board}" for "${classGrade}".
+
+STRICT RULES:
+1. ONLY include subjects that are actually part of the "${courseProgram}" curriculum
+2. For B.Sc Computer Science, subjects should be like: Problem Solving and Python Programming, Data Structures, Database Management Systems, Operating Systems, Computer Networks, etc.
+3. For B.Com: Financial Accounting, Business Law, Cost Accounting, Taxation, etc.
+4. For B.E./B.Tech: Engineering Mathematics, Engineering Physics, Programming, Electronics, etc.
+5. DO NOT include generic arts/humanities subjects unless they are mandatory for this specific course
+6. Include ONLY 6-10 subjects that are typically taught in ${classGrade} of ${courseProgram}
+
+Return ONLY a valid JSON array:
+[
+  {
+    "id": "subject_slug",
+    "name": "Exact Subject Name from ${board} ${courseProgram} syllabus",
+    "code": "Subject Code",
+    "description": "Brief description of what is covered"
+  }
+]
+
+JSON ONLY, no explanation:`
+            } else {
+                // Regular prompt for school students
+                prompt = `You are an expert education curriculum specialist. Find ALL subjects for:
 
 STUDENT PROFILE:
 - Country: ${country}
 - Education Level: ${educationLevel}
-- Board/University/Curriculum: ${board}
-- Class/Grade/Year: ${classGrade}
+- Board/Curriculum: ${board}
+- Class/Grade: ${classGrade}${courseInfo}
 
-WEB SEARCH RESULTS (use this for accuracy):
-${webSearchResults}
+${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `WEB SEARCH RESULTS:\n${webSearchResults}\n` : ''}
 
-CRITICAL INSTRUCTIONS:
-1. Use the OFFICIAL syllabus from "${board}" for "${classGrade}" - NOT generic subjects
-2. The subjects MUST match exactly what students in this specific board and grade study
-3. For Indian boards:
-   - CBSE Class 10: English, Hindi/Sanskrit, Mathematics, Science, Social Science, etc.
-   - ICSE: Different subject names than CBSE
-   - State Boards: May have regional language subjects
-4. For college: Department-specific subjects based on the course
-5. Include subject codes if they exist for this board
-6. Use the web search results above to verify accuracy
+Return the OFFICIAL subjects for ${board} ${classGrade}. Use exact subject names from the official curriculum.
 
-Return ONLY a valid JSON array with this exact structure:
+Return ONLY a valid JSON array:
 [
   {
-    "id": "unique_slug_lowercase",
-    "name": "Official Subject Name as per ${board}",
-    "code": "Subject Code (empty if not applicable)",
-    "description": "2-3 sentence description from official syllabus"
+    "id": "subject_slug",
+    "name": "Official Subject Name",
+    "code": "Code if exists",
+    "description": "Brief description"
   }
 ]
 
-Return ONLY the JSON array. No explanation, no markdown.`
+JSON ONLY:`
+            }
 
             const text = await generateWithRetry(prompt)
 

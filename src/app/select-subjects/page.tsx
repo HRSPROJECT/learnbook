@@ -69,6 +69,7 @@ export default function SelectSubjectsPage() {
                     educationLevel: profile.education_level,
                     board: profile.board,
                     classGrade: profile.class_grade,
+                    courseProgram: profile.course_program,  // For college students
                     searchType: 'subjects'
                 })
             })

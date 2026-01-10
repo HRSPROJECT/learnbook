@@ -36,7 +36,8 @@ export default function OnboardingPage() {
         board: '',
         classGrade: '',
         customBoard: '',
-        customGrade: ''
+        customGrade: '',
+        courseProgram: ''  // For college students: B.Sc CS, B.Com, B.E. IT, etc.
     })
 
     // If user is already authenticated and has profile, redirect to dashboard
@@ -73,7 +74,12 @@ export default function OnboardingPage() {
             case 1: return formData.fullName && formData.email
             case 2: return formData.country
             case 3: return formData.educationLevel
-            case 4: return (formData.board || formData.customBoard) && (formData.classGrade || formData.customGrade)
+            case 4: {
+                const hasBoard = formData.board || formData.customBoard
+                const hasGrade = formData.classGrade || formData.customGrade
+                const hasCourse = formData.educationLevel === 'school' || formData.courseProgram
+                return hasBoard && hasGrade && hasCourse
+            }
             default: return false
         }
     }
@@ -109,7 +115,8 @@ export default function OnboardingPage() {
                 country: formData.country,
                 education_level: formData.educationLevel as 'school' | 'college',
                 board: formData.board === 'Other' ? formData.customBoard : formData.board,
-                class_grade: formData.classGrade === 'Other' ? formData.customGrade : formData.classGrade
+                class_grade: formData.classGrade === 'Other' ? formData.customGrade : formData.classGrade,
+                course_program: formData.educationLevel === 'college' ? formData.courseProgram : null
             })
 
             if (error) {
@@ -404,6 +411,23 @@ export default function OnboardingPage() {
                                             />
                                         )}
                                     </div>
+
+                                    {/* Course/Program for College Students */}
+                                    {formData.educationLevel === 'college' && (
+                                        <div>
+                                            <label className="block text-sm font-medium mb-2">
+                                                Course / Program *
+                                            </label>
+                                            <input
+                                                type="text"
+                                                className="input"
+                                                placeholder="e.g., B.Sc Computer Science, B.Com, B.E. IT, MBA"
+                                                value={formData.courseProgram}
+                                                onChange={(e) => updateForm('courseProgram', e.target.value)}
+                                            />
+                                            <p className="text-xs text-muted mt-1">Enter your exact course name for accurate subjects</p>
+                                        </div>
+                                    )}
 
                                     {authError && (
                                         <div className="p-3 rounded-lg bg-error/10 border border-error/30 text-error text-sm">

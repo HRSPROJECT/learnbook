@@ -15,6 +15,7 @@ export interface UserProfile {
     education_level: 'school' | 'college' | null
     board: string | null
     class_grade: string | null
+    course_program: string | null  // e.g., "B.Sc Computer Science", "B.Com", "B.E. IT"
 }
 
 export interface StudyTask {

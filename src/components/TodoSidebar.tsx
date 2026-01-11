@@ -106,7 +106,7 @@ export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProp
                         animate={{ x: 0 }}
                         exit={{ x: 320 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                        className="fixed right-0 top-0 h-full w-80 z-40 flex flex-col shadow-2xl bg-surface border-l border-card-border"
+                        className="fixed right-0 top-0 h-full w-full sm:w-80 z-40 flex flex-col shadow-2xl bg-surface border-l border-card-border"
                     >
                         {/* Header */}
                         <div className="p-4 border-b border-card-border">

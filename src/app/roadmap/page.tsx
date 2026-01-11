@@ -138,21 +138,21 @@ export default function RoadmapPage() {
                 </div>
             </header>
 
-            <main className="max-w-5xl mx-auto px-6 py-8">
+            <main className="max-w-5xl mx-auto px-4 lg:px-6 py-6 lg:py-8">
                 {/* Progress Overview */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="card mb-8"
                 >
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                         <div>
                             <h2 className="text-lg font-bold">Overall Progress</h2>
                             <p className="text-sm text-muted">
                                 {completedCount} of {roadmap.length} milestones completed
                             </p>
                         </div>
-                        <span className="text-3xl font-bold text-primary">{Math.round(progressPercentage)}%</span>
+                        <span className="text-3xl font-bold text-primary text-right sm:text-left">{Math.round(progressPercentage)}%</span>
                     </div>
                     <div className="progress-bar">
                         <div
@@ -170,7 +170,7 @@ export default function RoadmapPage() {
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.1 }}
-                            className="flex gap-6"
+                            className="flex gap-3 lg:gap-6"
                         >
                             {/* Timeline Node */}
                             <div className="flex flex-col items-center">
@@ -200,9 +200,9 @@ export default function RoadmapPage() {
 
                             {/* Content Card */}
                             <div className={`flex-1 card ${item.status === 'in_progress' ? 'border-primary' : ''}`}>
-                                <div className="flex items-start justify-between mb-3">
+                                <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-3 gap-3">
                                     <div>
-                                        <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex flex-wrap items-center gap-2 mb-1">
                                             <h3 className="font-bold text-lg">{item.chapterName}</h3>
                                             <span className={`badge-${item.priority}`}>{item.priority}</span>
                                             {item.isRevision && (
@@ -222,7 +222,7 @@ export default function RoadmapPage() {
                                         value={item.status}
                                         onChange={(e) => updateStatus(item.chapterId, e.target.value as any)}
                                         className={`
-                      px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border
+                      w-full sm:w-auto px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border
                       ${item.status === 'completed'
                                                 ? 'bg-success/20 text-success border-success/30'
                                                 : item.status === 'in_progress'

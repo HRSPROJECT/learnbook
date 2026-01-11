@@ -207,13 +207,14 @@ export default function TimetablePage() {
                         onClick={handleSyncToCalendar}
                         disabled={isSyncing}
                         className="btn-secondary flex items-center gap-2 text-sm py-2 px-3"
+                        title="Sync to Calendar"
                     >
                         {isSyncing ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                             <Calendar className="w-4 h-4" />
                         )}
-                        Sync to Calendar
+                        <span className="hidden sm:inline">Sync to Calendar</span>
                     </button>
 
                     <div className="flex items-center gap-2 border-l border-card-border pl-4">
@@ -223,7 +224,7 @@ export default function TimetablePage() {
                 </div>
             </header>
 
-            <main className="max-w-5xl mx-auto px-6 py-8">
+            <main className="max-w-5xl mx-auto px-4 lg:px-6 py-6 lg:py-8">
                 {/* Week Selector */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -365,7 +366,7 @@ export default function TimetablePage() {
                                             <span className="text-sm text-muted">{task.durationMinutes} min</span>
                                         </div>
 
-                                        <h3 className={`font-medium mb-1 ${task.completed ? 'line-through' : ''}`}>
+                                        <h3 className={`font-medium mb-1 truncate ${task.completed ? 'line-through' : ''}`}>
                                             {task.chapterName}
                                         </h3>
 

@@ -211,9 +211,9 @@ export default function SubjectPage() {
                 </div>
             </header>
 
-            <main className="max-w-5xl mx-auto px-6 py-8">
+            <main className="max-w-5xl mx-auto px-4 lg:px-6 py-6 lg:py-8">
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 lg:gap-4 mb-6 lg:mb-8">
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -330,7 +330,7 @@ export default function SubjectPage() {
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation()
@@ -379,7 +379,7 @@ export default function SubjectPage() {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            className="w-full max-w-md card"
+                            className="w-full max-w-md card max-h-[85vh] overflow-y-auto"
                         >
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-lg font-bold">Add Chapter</h3>

@@ -239,7 +239,7 @@ export default function DashboardPage() {
                     </button>
                 </header>
 
-                <div className="p-6 lg:p-8">
+                <div className="p-4 lg:p-8">
                     {/* Welcome Header */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
@@ -286,7 +286,7 @@ export default function DashboardPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                                         <button
                                             className="p-1.5 hover:bg-secondary rounded"
                                             title="Edit"
@@ -393,7 +393,7 @@ export default function DashboardPage() {
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            className="w-full max-w-md card"
+                            className="w-full max-w-md card max-h-[85vh] overflow-y-auto"
                         >
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-lg font-bold">Add New Subject</h3>
@@ -461,7 +461,7 @@ export default function DashboardPage() {
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="w-full max-w-md card"
+                        className="w-full max-w-md card max-h-[85vh] overflow-y-auto"
                     >
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="text-lg font-bold">Settings</h3>

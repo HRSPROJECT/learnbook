@@ -40,10 +40,13 @@ export default function OnboardingPage() {
         courseProgram: ''  // For college students: B.Sc CS, B.Com, B.E. IT, etc.
     })
 
-    // If user is already authenticated and has profile, redirect to dashboard
+    // If user is already authenticated and has COMPLETE profile, redirect to select-subjects
     useEffect(() => {
         if (!authLoading && !profileLoading && user && profile) {
-            router.push('/select-subjects')
+            // Only redirect if profile is complete (has board and class_grade)
+            if (profile.board && profile.class_grade) {
+                router.push('/select-subjects')
+            }
         }
     }, [user, profile, authLoading, profileLoading, router])
 

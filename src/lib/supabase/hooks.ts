@@ -62,12 +62,14 @@ export function useUserProfile() {
     const { user } = useAuth()
     const [profile, setProfile] = useState<UserProfile | null>(null)
     const [loading, setLoading] = useState(true)
+    const [profileFetched, setProfileFetched] = useState(false)
     const supabase = createClient()
 
     const fetchProfile = useCallback(async () => {
         if (!user) {
             setProfile(null)
             setLoading(false)
+            setProfileFetched(true)
             return
         }
 
@@ -78,14 +80,22 @@ export function useUserProfile() {
                 .eq('id', user.id)
                 .single()
 
-            if (error && error.code !== 'PGRST116') {
-                console.error('Error fetching profile:', error)
+            if (error) {
+                // PGRST116 = no rows found, which is expected for new users
+                if (error.code !== 'PGRST116') {
+                    console.error('Error fetching profile:', error)
+                }
+                // Set profile to null so redirect can trigger
+                setProfile(null)
+            } else {
+                setProfile(data)
             }
-            setProfile(data)
         } catch (err) {
             console.error('Profile fetch error:', err)
+            setProfile(null)
         } finally {
             setLoading(false)
+            setProfileFetched(true)
         }
     }, [user, supabase])
 
@@ -109,8 +119,9 @@ export function useUserProfile() {
         fetchProfile()
     }, [fetchProfile])
 
-    return { profile, loading, updateProfile, refetch: fetchProfile }
+    return { profile, loading, profileFetched, updateProfile, refetch: fetchProfile }
 }
+
 
 // -----------------------------
 // useTasks Hook (Todo List)

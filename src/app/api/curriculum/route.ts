@@ -2,18 +2,71 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateWithRetry } from '@/lib/groq'
 import { searchWeb } from '@/lib/google-search'
 
-// Simple in-memory cache
-const cache = new Map<string, { data: any, timestamp: number }>()
-const CACHE_TTL = 1000 * 60 * 60 * 24 // 24 hours
+
+// Note: No caching - all requests fetch fresh data
+
+// Helper function to extract JSON from AI response
+function extractJSON(text: string): any[] | null {
+    // Clean the text
+    let cleaned = text.trim()
+
+    // Remove markdown code blocks
+    cleaned = cleaned.replace(/```json\s*/gi, '').replace(/```\s*/g, '')
+
+    // Try to find JSON array in different ways
+    const strategies = [
+        // Strategy 1: Direct parse
+        () => JSON.parse(cleaned),
+        // Strategy 2: Find array with regex
+        () => {
+            const match = cleaned.match(/\[\s*\{[\s\S]*\}\s*\]/)
+            if (match) return JSON.parse(match[0])
+            return null
+        },
+        // Strategy 3: Find from first [ to last ]
+        () => {
+            const start = cleaned.indexOf('[')
+            const end = cleaned.lastIndexOf(']')
+            if (start !== -1 && end > start) {
+                return JSON.parse(cleaned.substring(start, end + 1))
+            }
+            return null
+        },
+        // Strategy 4: Remove any text before [ and after ]
+        () => {
+            const start = cleaned.indexOf('[')
+            const end = cleaned.lastIndexOf(']')
+            if (start !== -1 && end > start) {
+                let jsonStr = cleaned.substring(start, end + 1)
+                // Fix common JSON issues
+                jsonStr = jsonStr.replace(/,\s*]/g, ']') // trailing comma
+                jsonStr = jsonStr.replace(/,\s*}/g, '}') // trailing comma in objects
+                return JSON.parse(jsonStr)
+            }
+            return null
+        }
+    ]
+
+    for (const strategy of strategies) {
+        try {
+            const result = strategy()
+            if (result && Array.isArray(result) && result.length > 0) {
+                return result
+            }
+        } catch {
+            // Continue to next strategy
+        }
+    }
+
+    return null
+}
+
 
 // Search for official syllabus information
 async function searchOfficialSyllabus(board: string, classGrade: string, subjectOrCourse?: string): Promise<string> {
     try {
-        // Build a specific search query
         let query: string
         if (subjectOrCourse) {
-            // For college: "SPPU B.Sc Computer Science 1st year syllabus subjects 2024"
-            // For chapters: "CBSE Class 10 Mathematics chapters list 2024"
             query = `${board} ${subjectOrCourse} ${classGrade} official syllabus 2024`
         } else {
             query = `${board} ${classGrade} all subjects list official syllabus 2024`
@@ -26,7 +79,6 @@ async function searchOfficialSyllabus(board: string, classGrade: string, subject
             return 'No web search results found.'
         }
 
-        // Format search results for LLM context
         return results.map((r, i) =>
             `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.displayLink}`
         ).join('\n\n')
@@ -50,7 +102,6 @@ export async function POST(request: NextRequest) {
 
     const { country, educationLevel, board, classGrade, searchType, subject, courseProgram } = body
 
-    // Debug: Log incoming request
     console.log('Curriculum API request:', { country, educationLevel, board, classGrade, courseProgram, searchType, subject })
 
     const apiKey = process.env.GROQ_API_KEY
@@ -62,200 +113,143 @@ export async function POST(request: NextRequest) {
         )
     }
 
-    const cacheKey = JSON.stringify({ country, educationLevel, board, classGrade, courseProgram, searchType, subject })
-    if (cache.has(cacheKey)) {
-        const cached = cache.get(cacheKey)!
-        if (Date.now() - cached.timestamp < CACHE_TTL) {
-            console.log('Returning cached data for:', cacheKey)
-            return NextResponse.json({ success: true, data: cached.data, isCached: true })
-        }
-    }
 
     try {
         if (searchType === 'subjects') {
-            // For college, include course program in search
             const webSearchResults = await searchOfficialSyllabus(board, classGrade, courseProgram)
-
             const isCollege = educationLevel === 'college'
             const courseInfo = courseProgram ? `\n- Course/Program: ${courseProgram}` : ''
 
             let prompt: string
 
             if (isCollege && courseProgram) {
-                // Strict prompt for college courses
-                prompt = `You are an expert university curriculum specialist for ${board}.
+                prompt = `You are a university curriculum expert. Return subjects for:
 
-STUDENT PROFILE:
-- University: ${board}
-- Course/Program: ${courseProgram}
-- Year: ${classGrade}
-- Country: ${country}
+University: ${board}
+Course: ${courseProgram}
+Year: ${classGrade}
+Country: ${country}
 
-${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `WEB SEARCH RESULTS:\n${webSearchResults}\n` : ''}
+${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
 
-TASK: Return the EXACT subjects taught in "${courseProgram}" at "${board}" for "${classGrade}".
+Return 6-8 subjects ONLY as a JSON array. No explanation.
 
-STRICT RULES:
-1. ONLY include subjects that are actually part of the "${courseProgram}" curriculum
-2. For B.Sc Computer Science, subjects should be like: Problem Solving and Python Programming, Data Structures, Database Management Systems, Operating Systems, Computer Networks, etc.
-3. For B.Com: Financial Accounting, Business Law, Cost Accounting, Taxation, etc.
-4. For B.E./B.Tech: Engineering Mathematics, Engineering Physics, Programming, Electronics, etc.
-5. DO NOT include generic arts/humanities subjects unless they are mandatory for this specific course
-6. Include ONLY 6-10 subjects that are typically taught in ${classGrade} of ${courseProgram}
-
-Return ONLY a valid JSON array:
+Example format:
 [
-  {
-    "id": "subject_slug",
-    "name": "Exact Subject Name from ${board} ${courseProgram} syllabus",
-    "code": "Subject Code",
-    "description": "Brief description of what is covered"
-  }
+  {"id": "data-structures", "name": "Data Structures", "code": "CS201", "description": "Arrays, linked lists, trees, graphs"}
 ]
 
-JSON ONLY, no explanation:`
+JSON:`
             } else {
-                // Regular prompt for school students
-                prompt = `You are an expert education curriculum specialist. Find ALL subjects for:
+                prompt = `You are an education curriculum expert. Return subjects for:
 
-STUDENT PROFILE:
-- Country: ${country}
-- Education Level: ${educationLevel}
-- Board/Curriculum: ${board}
-- Class/Grade: ${classGrade}${courseInfo}
+Country: ${country}
+Level: ${educationLevel}
+Board: ${board}
+Grade: ${classGrade}${courseInfo}
 
-${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `WEB SEARCH RESULTS:\n${webSearchResults}\n` : ''}
+${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
 
-Return the OFFICIAL subjects for ${board} ${classGrade}. Use exact subject names from the official curriculum.
+Return ALL official subjects as a JSON array. No explanation.
 
-Return ONLY a valid JSON array:
+Example format:
 [
-  {
-    "id": "subject_slug",
-    "name": "Official Subject Name",
-    "code": "Code if exists",
-    "description": "Brief description"
-  }
+  {"id": "mathematics", "name": "Mathematics", "code": "041", "description": "Algebra, geometry, statistics"}
 ]
 
-JSON ONLY:`
+JSON:`
             }
 
+            console.log('Generating subjects with AI...')
             const text = await generateWithRetry(prompt)
+            console.log('AI response (first 500 chars):', text.substring(0, 500))
 
-            const jsonMatch = text.match(/\[[\s\S]*\]/)
-            if (jsonMatch) {
-                try {
-                    const subjects = JSON.parse(jsonMatch[0])
-                    cache.set(cacheKey, { data: subjects, timestamp: Date.now() })
-                    return NextResponse.json({ success: true, data: subjects })
-                } catch (parseError) {
-                    console.error('JSON parse error:', parseError)
-                }
+            const subjects = extractJSON(text)
+
+            if (subjects && subjects.length > 0) {
+                return NextResponse.json({ success: true, data: subjects })
             }
+
+            return NextResponse.json(
+                { success: false, error: 'Could not generate subjects. Please try again.', canRetry: true },
+                { status: 500 }
+            )
         }
 
         if (searchType === 'chapters') {
-            // First, search the web for official chapter list
             const webSearchResults = await searchOfficialSyllabus(board, classGrade, subject)
 
-            const prompt = `You are an expert education curriculum specialist. Find the COMPLETE official chapter list for:
+            const prompt = `You are an education curriculum expert. Return chapters for:
 
-STUDENT PROFILE:
-- Country: ${country}
-- Board/Curriculum: ${board}
-- Class/Grade/Year: ${classGrade}
-- Subject: ${subject}
+Board: ${board}
+Grade: ${classGrade}
+Subject: ${subject}
+${courseProgram ? `Course: ${courseProgram}` : ''}
 
-WEB SEARCH RESULTS (use this for accuracy):
-${webSearchResults}
+${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
 
-CRITICAL INSTRUCTIONS:
-1. Use the OFFICIAL syllabus/textbook from "${board}" for "${classGrade}" "${subject}"
-2. List chapters in the EXACT order they appear in the official textbook
-3. Use the OFFICIAL chapter names - not generic names
-4. Examples of specific chapter names:
-   - CBSE Class 10 Math: "Real Numbers", "Polynomials", "Pair of Linear Equations in Two Variables"
-   - CBSE Class 10 Science: "Chemical Reactions and Equations", "Acids, Bases and Salts"
-   - ICSE uses different chapter names than CBSE
-5. Use the web search results above to verify chapter names
-6. Include 3-5 key concepts for each chapter
+Return ALL chapters in order as a JSON array. No explanation.
 
-Return ONLY a valid JSON array with this exact structure:
+Example format:
 [
-  {
-    "id": "chapter_slug",
-    "name": "Official Chapter Name from ${board} Textbook",
-    "chapterNumber": 1,
-    "description": "What this chapter covers (from official syllabus)",
-    "concepts": ["Key Concept 1", "Key Concept 2", "Key Concept 3"],
-    "estimatedHours": 8
-  }
+  {"id": "chapter-1", "name": "Real Numbers", "chapterNumber": 1, "description": "What this covers", "concepts": ["Concept 1", "Concept 2"], "estimatedHours": 8}
 ]
 
-Return ONLY the JSON array. No explanation, no markdown.`
+JSON:`
 
+            console.log('Generating chapters with AI...')
             const text = await generateWithRetry(prompt)
+            console.log('AI response (first 500 chars):', text.substring(0, 500))
 
-            const jsonMatch = text.match(/\[[\s\S]*\]/)
-            if (jsonMatch) {
-                try {
-                    const chapters = JSON.parse(jsonMatch[0])
-                    cache.set(cacheKey, { data: chapters, timestamp: Date.now() })
-                    return NextResponse.json({ success: true, data: chapters })
-                } catch (parseError) {
-                    console.error('JSON parse error:', parseError)
-                }
+            const chapters = extractJSON(text)
+
+            if (chapters && chapters.length > 0) {
+                return NextResponse.json({ success: true, data: chapters })
             }
+
+            return NextResponse.json(
+                { success: false, error: 'Could not generate chapters. Please try again.', canRetry: true },
+                { status: 500 }
+            )
         }
 
         if (searchType === 'topics') {
             const { chapterName } = body
 
-            const prompt = `You are an expert education curriculum specialist. Find all topics within:
+            const prompt = `You are an education curriculum expert. Return topics for:
 
-STUDENT PROFILE:
-- Board/Curriculum: ${board}
-- Class/Grade: ${classGrade}
-- Subject: ${subject}
-- Chapter: ${chapterName}
+Board: ${board}
+Grade: ${classGrade}
+Subject: ${subject}
+Chapter: ${chapterName}
 
-INSTRUCTIONS:
-1. List ALL topics and subtopics from the official syllabus
-2. Use official topic names as they appear in textbooks
-3. Include key learning points for each topic
+Return all topics as a JSON array. No explanation.
 
-Return ONLY a valid JSON array:
+Example format:
 [
-  {
-    "id": "topic_slug",
-    "name": "Official Topic Name",
-    "description": "What this topic covers",
-    "keyPoints": ["Point 1", "Point 2", "Point 3"],
-    "difficulty": "easy|medium|hard",
-    "estimatedMinutes": 30
-  }
+  {"id": "topic-1", "name": "Topic Name", "description": "What it covers", "keyPoints": ["Point 1", "Point 2"], "difficulty": "medium", "estimatedMinutes": 30}
 ]
 
-Return ONLY the JSON array. No explanation, no markdown.`
+JSON:`
 
             const text = await generateWithRetry(prompt)
+            console.log('AI response (first 500 chars):', text.substring(0, 500))
 
-            const jsonMatch = text.match(/\[[\s\S]*\]/)
-            if (jsonMatch) {
-                try {
-                    const topics = JSON.parse(jsonMatch[0])
-                    cache.set(cacheKey, { data: topics, timestamp: Date.now() })
-                    return NextResponse.json({ success: true, data: topics })
-                } catch (parseError) {
-                    console.error('JSON parse error:', parseError)
-                }
+            const topics = extractJSON(text)
+
+            if (topics && topics.length > 0) {
+                return NextResponse.json({ success: true, data: topics })
             }
+
+            return NextResponse.json(
+                { success: false, error: 'Could not generate topics. Please try again.' },
+                { status: 500 }
+            )
         }
 
         return NextResponse.json(
-            { success: false, error: 'Failed to parse AI response' },
-            { status: 500 }
+            { success: false, error: 'Invalid searchType. Use: subjects, chapters, or topics' },
+            { status: 400 }
         )
 
     } catch (error: any) {

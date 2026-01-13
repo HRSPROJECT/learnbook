@@ -40,6 +40,16 @@ export default function SelectSubjectsPage() {
         }
     }, [user, profileLoading, router])
 
+    // Redirect to onboarding if profile is incomplete
+    useEffect(() => {
+        if (!profileLoading && user && profile !== undefined) {
+            if (!profile || !profile.board || !profile.class_grade) {
+                router.push('/onboarding')
+                return
+            }
+        }
+    }, [profile, profileLoading, user, router])
+
     useEffect(() => {
         // Redirect to dashboard if user already has subjects
         if (!subjectsLoading && existingSubjects.length > 0) {
@@ -49,7 +59,7 @@ export default function SelectSubjectsPage() {
     }, [existingSubjects, subjectsLoading, router])
 
     useEffect(() => {
-        if (profile && !profileLoading) {
+        if (profile && !profileLoading && profile.board && profile.class_grade) {
             fetchSubjects()
         }
     }, [profile, profileLoading])

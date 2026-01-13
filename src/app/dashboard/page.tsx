@@ -17,7 +17,7 @@ import TodoSidebar from '@/components/TodoSidebar'
 export default function DashboardPage() {
     const router = useRouter()
     const { user, signOut } = useAuth()
-    const { profile, loading: profileLoading } = useUserProfile()
+    const { profile, loading: profileLoading, profileFetched } = useUserProfile()
     const { subjects, loading: subjectsLoading, addSubject, removeSubject, refetch } = useUserSubjects()
     const { settings, updateSettings, loading: settingsLoading } = useUserSettings()
 
@@ -36,6 +36,20 @@ export default function DashboardPage() {
             router.push('/login')
         }
     }, [user, profileLoading, router])
+
+    // Redirect to onboarding if profile is incomplete
+    useEffect(() => {
+        // Wait for profile fetch to complete AND user to exist
+        if (!profileFetched || !user) return
+
+        // Check if profile is missing or has incomplete data
+        const isProfileIncomplete = !profile || !profile.board || !profile.class_grade
+
+        if (isProfileIncomplete) {
+            console.log('Profile incomplete, redirecting to onboarding:', { profile, profileFetched })
+            router.push('/onboarding')
+        }
+    }, [profile, profileFetched, user, router])
 
     const loadChaptersForSubject = async (subjectId: string) => {
         const subject = subjects.find(s => s.id === subjectId)

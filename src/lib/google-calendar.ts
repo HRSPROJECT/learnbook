@@ -1,10 +1,25 @@
 // Calendar API scopes required: https://www.googleapis.com/auth/calendar.app.created
+// Drive API scopes required: https://www.googleapis.com/auth/drive.file
+
+// Helper to check and refresh token if needed
+async function getValidToken(currentToken: string): Promise<string> {
+    // Try using the current token first
+    const testResponse = await fetch('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=' + currentToken)
+    if (testResponse.ok) {
+        return currentToken
+    }
+    
+    // Token expired - user needs to re-authenticate
+    throw new Error('TOKEN_EXPIRED')
+}
 
 // 1. Create (or find) the dedicated LearnBook calendar
 async function getOrCreateCalendar(accessToken: string): Promise<string> {
+    const validToken = await getValidToken(accessToken)
+    
     // List calendars to see if "LearnBook Schedule" exists
     const listResponse = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
+        headers: { 'Authorization': `Bearer ${validToken}` }
     })
 
     if (listResponse.ok) {
@@ -17,7 +32,7 @@ async function getOrCreateCalendar(accessToken: string): Promise<string> {
     const createResponse = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${validToken}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -26,7 +41,10 @@ async function getOrCreateCalendar(accessToken: string): Promise<string> {
         })
     })
 
-    if (!createResponse.ok) throw new Error('Failed to create LearnBook calendar')
+    if (!createResponse.ok) {
+        const error = await createResponse.json()
+        throw new Error(`Failed to create calendar: ${error.error?.message || 'Unknown error'}`)
+    }
 
     const newCal = await createResponse.json()
     return newCal.id
@@ -44,24 +62,34 @@ export interface CalendarEvent {
 }
 
 export async function createCalendarEvent(accessToken: string, event: CalendarEvent) {
-    // 1. Ensure we have the target calendar
-    const calendarId = await getOrCreateCalendar(accessToken)
+    try {
+        const validToken = await getValidToken(accessToken)
+        
+        // 1. Ensure we have the target calendar
+        const calendarId = await getOrCreateCalendar(validToken)
 
-    // 2. Create event in THAT calendar
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(event)
-    })
+        // 2. Create event in THAT calendar
+        const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${validToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(event)
+        })
 
-    if (!response.ok) {
-        throw new Error('Failed to create calendar event')
+        if (!response.ok) {
+            const error = await response.json()
+            throw new Error(`Calendar API error: ${error.error?.message || 'Unknown error'}`)
+        }
+
+        return response.json()
+    } catch (error: any) {
+        if (error.message === 'TOKEN_EXPIRED') {
+            throw new Error('Your session has expired. Please sign out and sign in again with Google.')
+        }
+        throw error
     }
-
-    return response.json()
 }
 
 export function convertTaskToEvent(task: any, date: string): CalendarEvent {
@@ -99,27 +127,24 @@ export function convertTaskToEvent(task: any, date: string): CalendarEvent {
 }
 
 export function convertTodoToEvent(todo: any): CalendarEvent {
-    // Todos are treated as All-Day events. 
-    // If we wanted a specific time, we'd need a time field in the Todo interface.
+    // Todos are treated as All-Day events
+    const taskDate = todo.task_date || new Date().toISOString().split('T')[0]
+    
     return {
-        summary: `Todo: ${todo.task_description || 'Study Task'}`,
-        description: `Type: ${todo.task_type || 'General'}\nStatus: ${todo.completed ? 'Completed' : 'Pending'}`,
+        summary: `📚 ${todo.task_description || 'Study Task'}`,
+        description: `Type: ${todo.task_type || 'General'}\nStatus: ${todo.completed ? '✅ Completed' : '⏳ Pending'}\n\n✨ Created from LearnBook\n🔔 Don't forget to complete this task!`,
         start: {
-            date: todo.task_date // YYYY-MM-DD
+            date: taskDate // YYYY-MM-DD
         },
         end: {
-            date: todo.task_date // YYYY-MM-DD
+            date: taskDate // YYYY-MM-DD
         },
         reminders: {
             useDefault: false,
             overrides: [
-                // For all-day events, 'minutes' is minutes before 5pm the day before (usually), 
-                // or similar depending on client. 
-                // Actually, for all-day events, popup reminders might behave differently.
-                // Let's rely on user's default daily briefing or set a reasonable popup.
-                { method: 'popup', minutes: 720 } // 12 hours before (e.g. 5pm previous day? or 8am current day?)
-                // Note: The behavior of minutues for all-day events varies.
-                // Safest is often just to have it on the calendar.
+                { method: 'popup', minutes: 540 },  // 9am (9 hours before 6pm)
+                { method: 'email', minutes: 540 },  // Email at 9am
+                { method: 'popup', minutes: 120 }   // 2 hours before end of day
             ]
         }
     }

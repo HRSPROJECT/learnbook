@@ -49,6 +49,7 @@ export default function TimetablePage() {
 
         setIsSyncing(true)
         let successCount = 0
+        let errorCount = 0
         const currentTasks = schedule[selectedDay].tasks
         const date = schedule[selectedDay].date
 
@@ -60,14 +61,23 @@ export default function TimetablePage() {
                     const event = convertTaskToEvent(task, date)
                     await createCalendarEvent(session.provider_token, event)
                     successCount++
-                } catch (err) {
+                } catch (err: any) {
                     console.error('Failed to sync task:', task.id, err)
+                    errorCount++
+                    if (err.message?.includes('expired')) {
+                        alert(err.message)
+                        break
+                    }
                 }
             }
-            alert(`Successfully added ${successCount} study sessions to your Google Calendar!`)
-        } catch (error) {
+            if (successCount > 0) {
+                alert(`✅ Added ${successCount} study session${successCount > 1 ? 's' : ''} to Google Calendar!${errorCount > 0 ? `\n⚠️ ${errorCount} failed` : ''}`)
+            } else if (errorCount > 0) {
+                alert('❌ Failed to sync. Please try signing in again.')
+            }
+        } catch (error: any) {
             console.error('Sync error:', error)
-            alert('Failed to sync to calendar. Check your permissions.')
+            alert(error.message || 'Failed to sync to calendar. Check your permissions.')
         } finally {
             setIsSyncing(false)
         }

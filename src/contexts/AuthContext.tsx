@@ -10,6 +10,7 @@ interface AuthContextType {
     session: Session | null
     loading: boolean
     signInWithGoogle: () => Promise<{ error: string | null }>
+    connectGoogle: () => Promise<{ error: string | null }>
     signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>
     signUpWithEmail: (email: string, password: string) => Promise<{ error: string | null }>
     resetPassword: (email: string) => Promise<{ error: string | null }>
@@ -50,7 +51,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: `${window.location.origin}/auth/callback`
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                    scopes: 'openid email profile https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata',
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'consent'
+                    }
+                }
+            })
+
+            if (error) {
+                return { error: error.message }
+            }
+
+            return { error: null }
+        } catch (err) {
+            return { error: 'An unexpected error occurred' }
+        }
+    }
+
+    const connectGoogle = async () => {
+        try {
+            // Link Google account to existing user
+            const { error } = await supabase.auth.linkIdentity({
+                provider: 'google',
+                options: {
+                    redirectTo: `${window.location.origin}/auth/callback`,
+                    scopes: 'openid email profile https://www.googleapis.com/auth/calendar.app.created https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata',
+                    queryParams: {
+                        access_type: 'offline',
+                        prompt: 'consent'
+                    }
                 }
             })
 
@@ -129,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             session,
             loading,
             signInWithGoogle,
+            connectGoogle,
             signInWithEmail,
             signUpWithEmail,
             resetPassword,

@@ -226,15 +226,21 @@ export function useSubjectChapters(subjectId?: string) {
         description?: string
         concepts?: string[]
         estimated_hours?: number
-    }>) => {
+    }>, replaceAll = false) => {
         if (!user || !subjectId) return { error: 'Not authenticated or no subject' }
 
         try {
-            // First, delete any existing chapters to prevent duplicates
-            await supabase
-                .from('subject_chapters')
-                .delete()
-                .eq('subject_id', subjectId)
+            // Only delete existing chapters if explicitly requested (for AI regeneration)
+            if (replaceAll) {
+                const { error: deleteError } = await supabase
+                    .from('subject_chapters')
+                    .delete()
+                    .eq('subject_id', subjectId)
+                
+                if (deleteError) {
+                    console.error('Error deleting chapters:', deleteError)
+                }
+            }
 
             const chaptersWithSubject = chaptersToAdd.map(ch => ({
                 subject_id: subjectId,
@@ -254,7 +260,8 @@ export function useSubjectChapters(subjectId?: string) {
 
             if (error) throw error
 
-            setChapters(data || [])
+            // Refetch to get updated list
+            await fetchChapters()
             return { error: null, data }
         } catch (err: any) {
             console.error('Error adding chapters:', err)

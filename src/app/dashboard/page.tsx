@@ -29,6 +29,16 @@ export default function DashboardPage() {
     const [newSubject, setNewSubject] = useState({ name: '', description: '' })
     const [isAddingSubject, setIsAddingSubject] = useState(false)
 
+    const motivationalQuotes = [
+        "🌟 Every expert was once a beginner. Keep going!",
+        "💪 Success is the sum of small efforts repeated daily.",
+        "🎯 Focus on progress, not perfection.",
+        "🚀 The secret to getting ahead is getting started.",
+        "✨ Believe you can and you're halfway there!",
+        "📚 Education is the passport to the future."
+    ]
+    const [currentQuote] = useState(motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)])
+
     const isLoading = profileLoading || subjectsLoading || settingsLoading
 
     useEffect(() => {
@@ -163,18 +173,25 @@ export default function DashboardPage() {
                         </Link>
 
                         {/* Quick Stats */}
-                        <div className="space-y-3 mb-6 p-4 rounded-xl bg-secondary">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted">Subjects</span>
-                                <span className="font-bold">{subjects.length}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted">Chapters</span>
-                                <span className="font-bold">{totalChapters}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted">Completed</span>
-                                <span className="font-bold text-success">{completedChapters}</span>
+                        <div className="space-y-3 mb-6">
+                            {/* Stats */}
+                            <div className="p-4 rounded-xl bg-secondary space-y-3">
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted">Subjects</span>
+                                    <span className="font-bold">{subjects.length}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted">Chapters</span>
+                                    <span className="font-bold">{totalChapters}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted">Completed</span>
+                                    <span className="font-bold text-success">{completedChapters}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-sm">
+                                    <span className="text-muted">Progress</span>
+                                    <span className="font-bold text-primary">{totalChapters > 0 ? Math.round((completedChapters / totalChapters) * 100) : 0}%</span>
+                                </div>
                             </div>
                         </div>
 
@@ -263,6 +280,11 @@ export default function DashboardPage() {
                             Today's Tasks
                         </button>
                     </motion.div>
+
+                    {/* Motivational Quote */}
+                    <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
+                        <p className="text-center text-sm font-medium">{currentQuote}</p>
+                    </div>
 
                     {/* Subject Cards Grid */}
                     <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">

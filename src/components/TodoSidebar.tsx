@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     CheckCircle2, Circle, Plus, Trash2, ChevronRight,
-    ChevronLeft, Calendar, Clock, BookOpen, ListTodo, RefreshCw, Loader2
+    ChevronLeft, Calendar, Clock, BookOpen, ListTodo
 } from 'lucide-react'
 import { useLocalTasks, StudyTask } from '@/lib/supabase/hooks'
 import { useAuth } from '@/contexts/AuthContext'
 import { createCalendarEvent, convertTodoToEvent } from '@/lib/google-calendar'
+import { getValidGoogleToken, hasGoogleTokens } from '@/lib/google-tokens'
 
 interface TodoSidebarProps {
     isOpen?: boolean
@@ -16,11 +17,40 @@ interface TodoSidebarProps {
 }
 
 export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProps) {
-    const { session } = useAuth()
+    const { session, connectGoogle } = useAuth()
     const { tasks, addTask, toggleTask, deleteTask } = useLocalTasks()
     const [newTaskText, setNewTaskText] = useState('')
     const [showAddForm, setShowAddForm] = useState(false)
-    const [isSyncing, setIsSyncing] = useState(false)
+    const [googleToken, setGoogleToken] = useState<string | null>(null)
+
+    // Check if user has Google identity linked (from session) - this is immediate
+    const hasGoogleIdentity = !!session?.user?.identities?.some(
+        (identity) => identity.provider === 'google'
+    )
+
+    // Also check for provider_token (available right after OAuth)
+    const hasProviderToken = !!session?.provider_token
+
+    // Combined check: either has Google identity OR has stored tokens
+    const [hasStoredTokens, setHasStoredTokens] = useState(false)
+    const hasGoogleAccess = hasGoogleIdentity || hasProviderToken || hasStoredTokens
+
+    // Check for stored Google tokens on mount (for sync functionality)
+    useEffect(() => {
+        const checkGoogleTokens = async () => {
+            try {
+                const hasTokens = await hasGoogleTokens()
+                setHasStoredTokens(hasTokens)
+                if (hasTokens) {
+                    const token = await getValidGoogleToken()
+                    setGoogleToken(token)
+                }
+            } catch (error) {
+                console.log('Token check failed, using session identity')
+            }
+        }
+        checkGoogleTokens()
+    }, [session])
 
     const today = new Date().toLocaleDateString('en-US', {
         weekday: 'long',
@@ -34,50 +64,66 @@ export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProp
     const completedCount = todayTasks.filter(t => t.completed).length
     const progress = todayTasks.length > 0 ? (completedCount / todayTasks.length) * 100 : 0
 
-    const handleAddTask = () => {
-        if (newTaskText.trim()) {
-            addTask(newTaskText.trim())
-            setNewTaskText('')
-            setShowAddForm(false)
+    // Auto-sync to calendar using stored tokens
+    const syncToCalendar = async (task: StudyTask, action: 'add' | 'update' | 'delete') => {
+        // Try to get a valid token (either from state or refresh)
+        let token = googleToken
+        if (!token) {
+            token = await getValidGoogleToken()
+            if (token) setGoogleToken(token)
+        }
+        if (!token) return
+
+        try {
+            if (action === 'add' || action === 'update') {
+                const event = convertTodoToEvent(task)
+                await createCalendarEvent(token, event)
+            }
+            // Note: Calendar delete would need event ID tracking
+        } catch (error) {
+            console.error('Auto-sync failed:', error)
+            // If token error, clear cached token
+            if (String(error).includes('TOKEN_EXPIRED')) {
+                setGoogleToken(null)
+            }
         }
     }
 
-    const handleSyncToCalendar = async () => {
-        if (!session?.provider_token) {
-            alert('Please sign in with Google to sync tasks.')
-            return
-        }
+    const handleAddTask = async () => {
+        if (newTaskText.trim()) {
+            const newTask = addTask(newTaskText.trim())
+            setNewTaskText('')
+            setShowAddForm(false)
 
-        if (todayTasks.length === 0) {
-            alert('No tasks to sync for today.')
-            return
-        }
-
-        if (!confirm(`Sync ${todayTasks.length} tasks to your "LearnBook Schedule" calendar?`)) return
-
-        setIsSyncing(true)
-        let count = 0
-        try {
-            for (const task of todayTasks) {
-                // Skip if already completed (optional preference, but usually good)
-                // if (task.completed) continue 
-
-                // We don't have a way to check exact dupes yet without ID storage, 
-                // but "LearnBook Schedule" is isolated so it's safer.
+            // Auto-sync to calendar
+            if (newTask && hasGoogleAccess) {
                 try {
-                    const event = convertTodoToEvent(task)
-                    await createCalendarEvent(session.provider_token, event)
-                    count++
-                } catch (e) {
-                    console.error(e)
+                    await syncToCalendar(newTask, 'add')
+                    console.log('✅ Task synced to calendar')
+                } catch (error) {
+                    console.error('Failed to sync:', error)
                 }
             }
-            alert(`Synced ${count} tasks to Google Calendar!`)
-        } catch (error) {
-            console.error(error)
-            alert('Failed to sync tasks.')
-        } finally {
-            setIsSyncing(false)
+        }
+    }
+
+    const handleToggleTask = async (taskId: string) => {
+        const task = tasks.find(t => t.id === taskId)
+        toggleTask(taskId)
+
+        // Auto-sync status update
+        if (task) {
+            await syncToCalendar({ ...task, completed: !task.completed }, 'update')
+        }
+    }
+
+    const handleDeleteTask = async (taskId: string) => {
+        const task = tasks.find(t => t.id === taskId)
+        deleteTask(taskId)
+
+        // Auto-sync deletion
+        if (task) {
+            await syncToCalendar(task, 'delete')
         }
     }
 
@@ -114,45 +160,48 @@ export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProp
                                 <div className="flex items-center gap-2">
                                     <ListTodo className="w-5 h-5 text-primary" />
                                     <h2 className="font-bold">Today's Tasks</h2>
+                                    {hasGoogleAccess && (
+                                        <span className="text-xs text-success">• Auto-synced</span>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={handleSyncToCalendar}
-                                        disabled={isSyncing}
-                                        className="p-1.5 hover:bg-secondary rounded-lg text-primary"
-                                        title="Sync to Google Calendar"
-                                    >
-                                        {isSyncing ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                        ) : (
-                                            <RefreshCw className="w-4 h-4" />
-                                        )}
-                                    </button>
-                                    <button
-                                        onClick={onToggle}
-                                        className="p-1.5 hover:bg-secondary rounded-lg"
-                                    >
-                                        <ChevronRight className="w-4 h-4" />
-                                    </button>
-                                </div>
+                                <button
+                                    onClick={onToggle}
+                                    className="p-1.5 hover:bg-secondary rounded-lg"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
                             </div>
                             <p className="text-sm text-muted">{today}</p>
 
+                            {/* Connect Google Banner */}
+                            {!hasGoogleAccess && (
+                                <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+                                    <p className="text-xs text-muted mb-2">
+                                        🔔 Connect Google to auto-sync tasks to Calendar & save to Drive
+                                    </p>
+                                    <button
+                                        onClick={connectGoogle}
+                                        className="btn-primary w-full text-xs py-1.5"
+                                    >
+                                        Connect Google Account
+                                    </button>
+                                </div>
+                            )}
+                        </div>
 
-                            {/* Progress Bar */}
-                            <div className="mt-3">
-                                <div className="flex items-center justify-between text-xs mb-1">
-                                    <span className="text-muted">{completedCount}/{todayTasks.length} completed</span>
-                                    <span className="text-primary">{Math.round(progress)}%</span>
-                                </div>
-                                <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                                    <motion.div
-                                        className="h-full bg-gradient-to-r from-primary to-accent"
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${progress}%` }}
-                                        transition={{ duration: 0.5 }}
-                                    />
-                                </div>
+                        {/* Progress Bar */}
+                        <div className="px-4 py-3 border-b border-card-border">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                                <span className="text-muted">{completedCount}/{todayTasks.length} completed</span>
+                                <span className="text-primary">{Math.round(progress)}%</span>
+                            </div>
+                            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-primary to-accent"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${progress}%` }}
+                                    transition={{ duration: 0.5 }}
+                                />
                             </div>
                         </div>
 
@@ -179,7 +228,7 @@ export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProp
                                         >
                                             <div className="flex items-start gap-3">
                                                 <button
-                                                    onClick={() => toggleTask(task.id)}
+                                                    onClick={() => handleToggleTask(task.id)}
                                                     className="mt-0.5 flex-shrink-0"
                                                 >
                                                     {task.completed ? (
@@ -210,7 +259,7 @@ export default function TodoSidebar({ isOpen = true, onToggle }: TodoSidebarProp
                                                     </div>
                                                 </div>
                                                 <button
-                                                    onClick={() => deleteTask(task.id)}
+                                                    onClick={() => handleDeleteTask(task.id)}
                                                     className="opacity-0 group-hover:opacity-100 p-1 hover:bg-error/20 rounded transition-all"
                                                 >
                                                     <Trash2 className="w-4 h-4 text-error" />

@@ -79,13 +79,27 @@ export default function SelectSubjectsPage() {
                     educationLevel: profile.education_level,
                     board: profile.board,
                     classGrade: profile.class_grade,
-                    courseProgram: profile.course_program,  // For college students
+                    courseProgram: profile.course_program,
                     searchType: 'subjects'
                 })
             })
 
             if (!response.ok) {
-                throw new Error(`HTTP error: ${response.status}`)
+                const errorText = await response.text()
+                console.error('API error:', response.status, errorText)
+                
+                // Show user-friendly error and use fallback
+                setError('Could not fetch subjects from AI. Using standard subjects.')
+                
+                // Provide fallback subjects
+                const fallbackSubjects = [
+                    { id: 'math', name: 'Mathematics', description: 'Core mathematics concepts' },
+                    { id: 'science', name: 'Science', description: 'Physics, Chemistry, Biology' },
+                    { id: 'english', name: 'English', description: 'Language and Literature' }
+                ]
+                setAvailableSubjects(fallbackSubjects)
+                setIsLoading(false)
+                return
             }
 
             const text = await response.text()

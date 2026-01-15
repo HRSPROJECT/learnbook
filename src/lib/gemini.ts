@@ -1,8 +1,8 @@
-// Groq API-based AI functions for LearnBook
-// This file maintains the same interface as the original Gemini-based version
-// but uses Groq API under the hood
+// AI functions for LearnBook with smart fallback
+// Tries Gemini first, falls back to Groq if rate limited
 
-import { generateContent, generateWithRetry, callGroqAPI, GroqMessage } from './groq'
+import { generateWithFallback } from './ai-client'
+import { callGroqAPI, GroqMessage } from './groq'
 
 export interface LearningContext {
     country: string
@@ -76,7 +76,7 @@ Return a JSON array of chapters with this structure:
 Return ONLY the JSON array, no other text. Include 3-4 most important chapters for MVP purposes.`
 
     try {
-        const text = await generateWithRetry(prompt)
+        const text = await generateWithFallback(prompt)
         const jsonMatch = text.match(/\[[\s\S]*\]/)
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0])
@@ -127,7 +127,7 @@ Start from today: ${new Date().toISOString().split('T')[0]}
 Return ONLY the JSON array.`
 
     try {
-        const text = await generateWithRetry(prompt)
+        const text = await generateWithFallback(prompt)
         const jsonMatch = text.match(/\[[\s\S]*\]/)
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0])
@@ -169,7 +169,7 @@ Return a JSON array:
 Return ONLY the JSON array.`
 
     try {
-        const text = await generateWithRetry(prompt)
+        const text = await generateWithFallback(prompt)
         const jsonMatch = text.match(/\[[\s\S]*\]/)
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0])
@@ -218,7 +218,7 @@ Return JSON:
 Return ONLY the JSON object.`
 
     try {
-        const text = await generateContent(prompt)
+        const text = await generateWithFallback(prompt)
         const jsonMatch = text.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0])
@@ -269,7 +269,7 @@ Return JSON:
 Return ONLY the JSON object.`
 
     try {
-        const text = await generateContent(prompt)
+        const text = await generateWithFallback(prompt)
         const jsonMatch = text.match(/\{[\s\S]*\}/)
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0])
@@ -453,7 +453,7 @@ export function getGeminiModel() {
     return {
         generateContent: async (prompt: string) => ({
             response: {
-                text: () => generateContent(prompt)
+                text: () => generateWithFallback(prompt)
             }
         })
     }

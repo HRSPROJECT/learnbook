@@ -130,8 +130,8 @@ export default function ChatBot({ context }: ChatBotProps) {
                         }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         className={`fixed bg-card-bg border border-card-border shadow-2xl overflow-hidden z-50 flex flex-col ${isFullscreen
-                                ? 'inset-4 rounded-2xl'
-                                : 'bottom-6 right-6 w-[380px] max-w-[calc(100vw-48px)] rounded-2xl'
+                            ? 'inset-4 rounded-2xl'
+                            : 'bottom-6 right-6 w-[380px] max-w-[calc(100vw-48px)] rounded-2xl'
                             }`}
                         style={{ height: isFullscreen ? 'auto' : (isMinimized ? 'auto' : '500px') }}
                     >
@@ -210,13 +210,13 @@ export default function ChatBot({ context }: ChatBotProps) {
                                                     : 'bg-secondary rounded-bl-sm'
                                                     }`}
                                             >
-                                                <p className={`${isFullscreen ? 'text-base' : 'text-sm'} whitespace-pre-wrap`}>
+                                                <div className={`${isFullscreen ? 'text-base' : 'text-sm'}`}>
                                                     {message.role === 'assistant' ? (
                                                         <FormattedText text={message.content} />
                                                     ) : (
-                                                        message.content
+                                                        <p className="whitespace-pre-wrap">{message.content}</p>
                                                     )}
-                                                </p>
+                                                </div>
                                             </div>
                                             {message.role === 'user' && (
                                                 <div className={`${isFullscreen ? 'w-10 h-10' : 'w-7 h-7'} rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0`}>

@@ -53,12 +53,11 @@ export async function callGroqAPI(options: GroqRequestOptions): Promise<string> 
         },
         body: JSON.stringify({
             messages,
-            model: 'openai/gpt-oss-120b',
+            model: 'llama-3.3-70b-versatile',
             temperature,
             max_completion_tokens: maxTokens,
             top_p: 1,
             stream,
-            reasoning_effort: 'medium',
             stop: null
         })
     })

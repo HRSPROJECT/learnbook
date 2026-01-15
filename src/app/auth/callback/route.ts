@@ -48,15 +48,34 @@ export async function GET(request: Request) {
         }
 
         if (data.session) {
+            // Store Google OAuth tokens if present (for Calendar/Drive sync)
+            if (data.session.provider_token) {
+                const tokenExpiresAt = data.session.expires_at
+                    ? new Date(data.session.expires_at * 1000).toISOString()
+                    : new Date(Date.now() + 3600 * 1000).toISOString() // Default 1 hour
+
+                await supabase
+                    .from('user_profiles')
+                    .upsert({
+                        id: data.user.id,
+                        google_access_token: data.session.provider_token,
+                        google_refresh_token: data.session.provider_refresh_token || null,
+                        google_token_expires_at: tokenExpiresAt
+                    }, {
+                        onConflict: 'id',
+                        ignoreDuplicates: false
+                    })
+            }
+
             // Check if user has profile to decide redirect
             const { data: profile } = await supabase
                 .from('user_profiles')
-                .select('id')
+                .select('id, country')
                 .eq('id', data.user.id)
                 .single()
 
-            // If no profile, go to onboarding; otherwise go to dashboard/select-subjects
-            const redirectPath = profile ? '/dashboard' : '/onboarding'
+            // If no profile or incomplete, go to onboarding; otherwise go to dashboard
+            const redirectPath = profile?.country ? '/dashboard' : '/onboarding'
             return NextResponse.redirect(`${origin}${redirectPath}`)
         }
 

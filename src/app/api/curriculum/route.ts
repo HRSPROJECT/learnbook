@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateWithRetry } from '@/lib/groq'
+import { generateWithFallback } from '@/lib/ai-client'
 import { searchWeb } from '@/lib/google-search'
 
 
@@ -67,9 +67,11 @@ async function searchOfficialSyllabus(board: string, classGrade: string, subject
     try {
         let query: string
         if (subjectOrCourse) {
-            query = `${board} ${subjectOrCourse} ${classGrade} official syllabus 2024`
+            // More specific query for chapters/topics
+            query = `"${board}" "${subjectOrCourse}" "${classGrade}" official syllabus curriculum chapters topics 2024 2025`
         } else {
-            query = `${board} ${classGrade} all subjects list official syllabus 2024`
+            // More specific query for subjects list
+            query = `"${board}" "${classGrade}" official syllabus subjects list curriculum 2024 2025`
         }
 
         console.log('Web search query:', query)
@@ -79,9 +81,10 @@ async function searchOfficialSyllabus(board: string, classGrade: string, subject
             return 'No web search results found.'
         }
 
+        // Format results with more context
         return results.map((r, i) =>
-            `[${i + 1}] ${r.title}\n${r.snippet}\nSource: ${r.displayLink}`
-        ).join('\n\n')
+            `[Source ${i + 1}] ${r.title}\n${r.snippet}\nURL: ${r.link}\nDomain: ${r.displayLink}`
+        ).join('\n\n---\n\n')
     } catch (error) {
         console.error('Web search error:', error)
         return 'Web search unavailable.'
@@ -123,45 +126,82 @@ export async function POST(request: NextRequest) {
             let prompt: string
 
             if (isCollege && courseProgram) {
-                prompt = `You are a university curriculum expert. Return subjects for:
+                prompt = `You are extracting subjects from official university syllabus data.
 
+CONTEXT:
 University: ${board}
-Course: ${courseProgram}
+Program: ${courseProgram}
 Year: ${classGrade}
 Country: ${country}
 
-${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
+WEB SEARCH RESULTS (OFFICIAL SYLLABUS):
+${webSearchResults}
 
-Return 6-8 subjects ONLY as a JSON array. No explanation.
+CRITICAL RULES:
+1. Extract ALL subjects from the web search results above
+2. Return 8-12 subjects minimum (all subjects for this year/semester)
+3. DO NOT limit to only 3-4 subjects
+4. Include ALL mandatory subjects
+5. Include elective subjects if mentioned
+6. Use EXACT subject names from search results
+7. If web search has limited info, include all standard subjects for "${courseProgram} ${classGrade}"
 
-Example format:
+EXAMPLE for B.E. First Year (8+ subjects):
 [
-  {"id": "data-structures", "name": "Data Structures", "code": "CS201", "description": "Arrays, linked lists, trees, graphs"}
+  {"id": "engg-math-1", "name": "Engineering Mathematics-I", "code": "FE101", "description": "Calculus, differential equations, linear algebra"},
+  {"id": "engg-physics", "name": "Engineering Physics", "code": "FE102", "description": "Mechanics, thermodynamics, optics, modern physics"},
+  {"id": "engg-chemistry", "name": "Engineering Chemistry", "code": "FE103", "description": "Atomic structure, chemical bonding, thermodynamics"},
+  {"id": "basic-electrical", "name": "Basic Electrical Engineering", "code": "FE104", "description": "DC circuits, AC circuits, electrical machines"},
+  {"id": "engg-mechanics", "name": "Engineering Mechanics", "code": "FE105", "description": "Statics, dynamics, kinematics"},
+  {"id": "engg-graphics", "name": "Engineering Graphics", "code": "FE106", "description": "Orthographic projections, isometric views, CAD"},
+  {"id": "programming", "name": "Fundamentals of Programming", "code": "FE107", "description": "C programming, algorithms, problem solving"},
+  {"id": "communication", "name": "Professional Communication Skills", "code": "FE108", "description": "Technical writing, presentation skills"},
+  {"id": "workshop", "name": "Workshop Practice", "code": "FE109", "description": "Fitting, welding, machining, carpentry"}
 ]
 
-JSON:`
+Now extract ALL subjects from the web search results. Return 8-12 subjects minimum. Return ONLY valid JSON array:
+
+`
             } else {
-                prompt = `You are an education curriculum expert. Return subjects for:
+                prompt = `You are extracting subjects from official board syllabus data.
 
-Country: ${country}
-Level: ${educationLevel}
+CONTEXT:
 Board: ${board}
-Grade: ${classGrade}${courseInfo}
+Grade: ${classGrade}
+Education Level: ${educationLevel}
+Country: ${country}
 
-${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
+WEB SEARCH RESULTS (OFFICIAL SYLLABUS):
+${webSearchResults}
 
-Return ALL official subjects as a JSON array. No explanation.
+CRITICAL RULES:
+1. Extract ALL subjects from the web search results above
+2. Return 6-10 subjects minimum (all subjects for this grade)
+3. DO NOT limit to only 3-4 subjects
+4. Include ALL mandatory subjects
+5. Include elective subjects if mentioned
+6. Use EXACT subject names from search results
+7. If web search has limited info, include all standard subjects for "${board} ${classGrade}"
 
-Example format:
+EXAMPLE for CBSE Class 10 (6+ subjects):
 [
-  {"id": "mathematics", "name": "Mathematics", "code": "041", "description": "Algebra, geometry, statistics"}
+  {"id": "mathematics", "name": "Mathematics", "code": "041", "description": "Number systems, algebra, geometry, trigonometry, statistics"},
+  {"id": "science", "name": "Science", "code": "086", "description": "Physics, chemistry, biology"},
+  {"id": "social-science", "name": "Social Science", "code": "087", "description": "History, geography, civics, economics"},
+  {"id": "english", "name": "English Language & Literature", "code": "184", "description": "Reading, writing, literature, grammar"},
+  {"id": "hindi", "name": "Hindi Course A", "code": "002", "description": "Hindi language, literature, grammar"},
+  {"id": "computer", "name": "Information Technology", "code": "402", "description": "Computer basics, programming, applications"}
 ]
 
-JSON:`
+Now extract ALL subjects from the web search results. Return 6-10 subjects minimum. Return ONLY valid JSON array:
+
+`
             }
 
             console.log('Generating subjects with AI...')
-            const text = await generateWithRetry(prompt)
+            console.log('Web search results length:', webSearchResults.length)
+            console.log('Prompt being sent:', prompt.substring(0, 300) + '...')
+            const text = await generateWithFallback(prompt)
             console.log('AI response (first 500 chars):', text.substring(0, 500))
 
             const subjects = extractJSON(text)
@@ -179,26 +219,50 @@ JSON:`
         if (searchType === 'chapters') {
             const webSearchResults = await searchOfficialSyllabus(board, classGrade, subject)
 
-            const prompt = `You are an education curriculum expert. Return chapters for:
+            const prompt = `Extract chapters/units/modules from official syllabus data.
 
-Board: ${board}
-Grade: ${classGrade}
+CONTEXT:
+Board/University: ${board}
+Year: ${classGrade}
 Subject: ${subject}
-${courseProgram ? `Course: ${courseProgram}` : ''}
+${courseProgram ? `Program: ${courseProgram}` : ''}
 
-${webSearchResults !== 'No web search results found.' && webSearchResults !== 'Web search unavailable.' ? `Reference:\n${webSearchResults}\n` : ''}
+OFFICIAL SYLLABUS DATA:
+${webSearchResults}
 
-Return ALL chapters in order as a JSON array. No explanation.
+CRITICAL EXTRACTION RULES:
+1. Look for "Unit", "Module", "Chapter", "Topic" in the syllabus above
+2. Extract EXACT names - do NOT paraphrase or simplify
+3. Maintain EXACT order from syllabus
+4. If syllabus says "Unit 1: Single Variable Calculus & Fourier Series" → use that EXACT name
+5. DO NOT create generic names like "Calculus" or "Linear Algebra"
+6. Include all sub-topics in description
+7. MUST include "concepts" array with 3-5 key concepts per chapter
+8. Return 5-8 chapters/units (complete syllabus)
+9. IF web search has no detailed syllabus, use standard curriculum for "${board} ${classGrade} ${subject}"
 
-Example format:
+CORRECT EXAMPLE (from web search):
 [
-  {"id": "chapter-1", "name": "Real Numbers", "chapterNumber": 1, "description": "What this covers", "concepts": ["Concept 1", "Concept 2"], "estimatedHours": 8}
+  {"id": "unit-1", "name": "Single Variable Calculus & Fourier Series", "chapterNumber": 1, "description": "Limits, continuity, differentiation, integration, Fourier series", "concepts": ["Limits", "Derivatives", "Integration", "Fourier Series"], "estimatedHours": 12},
+  {"id": "unit-2", "name": "Multivariable Calculus – Partial Differentiation", "chapterNumber": 2, "description": "Functions of several variables, partial derivatives, chain rule", "concepts": ["Partial Derivatives", "Chain Rule", "Jacobian"], "estimatedHours": 10},
+  {"id": "unit-3", "name": "Applications of Partial Differentiation", "chapterNumber": 3, "description": "Maxima, minima, Lagrange multipliers, Taylor series", "concepts": ["Maxima-Minima", "Lagrange Multipliers", "Taylor Series"], "estimatedHours": 10},
+  {"id": "unit-4", "name": "Linear Algebra – Matrices and System of Linear Equations", "chapterNumber": 4, "description": "Matrix operations, determinants, rank, system of equations", "concepts": ["Matrices", "Determinants", "Rank", "Linear Systems"], "estimatedHours": 12},
+  {"id": "unit-5", "name": "Linear Algebra – Eigen Values, Eigen Vectors, and Diagonalization", "chapterNumber": 5, "description": "Eigenvalues, eigenvectors, diagonalization, quadratic forms", "concepts": ["Eigenvalues", "Eigenvectors", "Diagonalization"], "estimatedHours": 12}
 ]
 
-JSON:`
+WRONG EXAMPLE (generic names):
+[
+  {"name": "Calculus"}, ❌ Too generic
+  {"name": "Linear Algebra"}, ❌ Too generic
+  {"name": "Differential Equations"} ❌ Not from syllabus
+]
+
+Now extract from the syllabus above. Use EXACT unit/chapter names. Return ONLY valid JSON array:
+
+`
 
             console.log('Generating chapters with AI...')
-            const text = await generateWithRetry(prompt)
+            const text = await generateWithFallback(prompt)
             console.log('AI response (first 500 chars):', text.substring(0, 500))
 
             const chapters = extractJSON(text)
@@ -232,7 +296,7 @@ Example format:
 
 JSON:`
 
-            const text = await generateWithRetry(prompt)
+            const text = await generateWithFallback(prompt)
             console.log('AI response (first 500 chars):', text.substring(0, 500))
 
             const topics = extractJSON(text)

@@ -331,6 +331,7 @@ export function useLocalTasks() {
             created_at: new Date().toISOString()
         }
         saveTasks([...tasks, newTask])
+        return newTask
     }
 
     const toggleTask = (taskId: string) => {

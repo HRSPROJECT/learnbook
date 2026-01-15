@@ -110,7 +110,14 @@ export default function SubjectPage() {
                 })
             })
 
+            if (!response.ok) {
+                console.error('API error:', response.status, response.statusText)
+                alert(`Failed to load chapters: ${response.status}`)
+                return
+            }
+
             const result = await response.json()
+            console.log('API result:', result)
 
             if (result.success && result.data) {
                 const chaptersToAdd = result.data.map((ch: any, index: number) => ({
@@ -121,8 +128,11 @@ export default function SubjectPage() {
                     estimated_hours: ch.estimatedHours || 5
                 }))
 
-                await addChapters(chaptersToAdd)
+                await addChapters(chaptersToAdd, true)
                 await refetchChapters()
+            } else {
+                console.error('API returned error:', result)
+                alert(result.error || 'Failed to load chapters')
             }
         } catch (err) {
             console.error('Error loading chapters:', err)
@@ -214,49 +224,29 @@ export default function SubjectPage() {
             <main className="max-w-5xl mx-auto px-6 py-8">
                 {/* Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, ease: "easeOut" }}
-                        className="card text-center"
-                    >
+                    <div className="card text-center">
                         <Target className="w-6 h-6 mx-auto mb-2 text-primary" />
                         <p className="text-2xl font-bold">{subjectChapters.length}</p>
                         <p className="text-xs text-muted">Total Chapters</p>
-                    </motion.div>
+                    </div>
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.05, duration: 0.2, ease: "easeOut" }}
-                        className="card text-center"
-                    >
+                    <div className="card text-center">
                         <CheckCircle2 className="w-6 h-6 mx-auto mb-2 text-success" />
                         <p className="text-2xl font-bold">{completedCount}</p>
                         <p className="text-xs text-muted">Completed</p>
-                    </motion.div>
+                    </div>
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1, duration: 0.2, ease: "easeOut" }}
-                        className="card text-center"
-                    >
+                    <div className="card text-center">
                         <Play className="w-6 h-6 mx-auto mb-2 text-accent" />
                         <p className="text-2xl font-bold">{inProgressCount}</p>
                         <p className="text-xs text-muted">In Progress</p>
-                    </motion.div>
+                    </div>
 
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.15, duration: 0.2, ease: "easeOut" }}
-                        className="card text-center"
-                    >
+                    <div className="card text-center">
                         <Clock className="w-6 h-6 mx-auto mb-2 text-warning" />
                         <p className="text-2xl font-bold">{totalHours}h</p>
                         <p className="text-xs text-muted">Est. Time</p>
-                    </motion.div>
+                    </div>
                 </div>
 
                 {/* Chapter List */}
@@ -280,17 +270,7 @@ export default function SubjectPage() {
 
                 <div className="space-y-3">
                     {subjectChapters.map((chapter, index) => (
-                        <motion.div
-                            key={chapter.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{
-                                delay: Math.min(index * 0.03, 0.3),
-                                duration: 0.2,
-                                ease: "easeOut"
-                            }}
-                            className="card group"
-                        >
+                        <div key={chapter.id} className="card group">
                             <div className="flex items-start gap-4">
                                 {/* Status Toggle */}
                                 <button
@@ -350,7 +330,7 @@ export default function SubjectPage() {
                                     </Link>
                                 </div>
                             </div>
-                        </motion.div>
+                        </div>
                     ))}
                 </div>
 

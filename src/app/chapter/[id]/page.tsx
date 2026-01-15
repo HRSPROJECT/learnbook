@@ -7,12 +7,12 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import {
     ChevronLeft, BookOpen, Clock, Target, ExternalLink, Play,
     Loader2, Youtube, FileText, Lightbulb, AlertTriangle, CheckCircle2,
-    Brain, ChevronRight, Sparkles, RefreshCw, Save, Check, HardDrive, Maximize2, X
+    Brain, ChevronRight, Sparkles, RefreshCw, Save, Check, HardDrive, Maximize2, X, FileDown
 } from 'lucide-react'
-import { loadData, saveData, LearningData, Subject, Chapter } from '@/types/learning'
+import { useSubjectChapters } from '@/lib/supabase/subjects'
 import ChatBot from '@/components/ChatBot'
 import { useAuth } from '@/contexts/AuthContext'
-import { createGoogleDoc } from '@/lib/google-drive'
+import { createGoogleDocInFolder } from '@/lib/google-drive'
 import FormattedText, { MathFormula } from '@/components/FormattedText'
 
 interface Video {
@@ -41,9 +41,11 @@ export default function ChapterDetailPage() {
     const chapterId = params.id as string
     const subjectId = searchParams.get('subject')
 
-    const [data, setData] = useState<LearningData | null>(null)
-    const [subject, setSubject] = useState<Subject | null>(null)
-    const [chapter, setChapter] = useState<Chapter | null>(null)
+    const { updateChapterProgress } = useSubjectChapters(subjectId || undefined)
+
+    const [data, setData] = useState<any | null>(null)
+    const [subject, setSubject] = useState<any | null>(null)
+    const [chapter, setChapter] = useState<any | null>(null)
     const [videos, setVideos] = useState<Video[]>([])
     const [summary, setSummary] = useState<Summary | null>(null)
     const [isLoading, setIsLoading] = useState(true)
@@ -57,6 +59,174 @@ export default function ChapterDetailPage() {
     const [isCompleted, setIsCompleted] = useState(false)
     const [isSavingToDrive, setIsSavingToDrive] = useState(false)
     const [fullscreenVideo, setFullscreenVideo] = useState<Video | null>(null)
+    const [isExportingPdf, setIsExportingPdf] = useState(false)
+
+    // Export notes as PDF
+    const handleExportPdf = async () => {
+        if (!summary || !chapter) return
+
+        setIsExportingPdf(true)
+        try {
+            // Create a styled HTML document for printing
+            const printContent = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${chapter.name} - Study Notes</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: #6366f1; }
+        h2 { font-size: 20px; font-weight: 600; margin: 24px 0 12px; color: #1a1a1a; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
+        h3 { font-size: 16px; font-weight: 600; margin: 16px 0 8px; color: #374151; }
+        
+        .subtitle { color: #6b7280; font-size: 14px; margin-bottom: 24px; }
+        .date { color: #9ca3af; font-size: 12px; }
+        
+        p { margin: 8px 0; }
+        
+        .overview { background: #f9fafb; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+        
+        ul, ol { margin: 8px 0; padding-left: 24px; }
+        li { margin: 6px 0; }
+        
+        .key-point { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+        .key-point::before { content: "✓"; color: #22c55e; font-weight: bold; }
+        
+        .formula-box { 
+            background: #f0fdf4; 
+            border: 1px solid #bbf7d0; 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            margin: 8px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .formula-name { font-weight: 600; color: #166534; }
+        .formula-expr { font-size: 18px; margin: 8px 0; }
+        .formula-usage { font-size: 13px; color: #6b7280; }
+        
+        .term-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .term-box { background: #f3f4f6; padding: 12px; border-radius: 8px; }
+        .term-name { font-weight: 600; color: #1f2937; }
+        .term-def { font-size: 13px; color: #4b5563; margin-top: 4px; }
+        
+        .tip-box { 
+            background: #fefce8; 
+            border-left: 4px solid #eab308; 
+            padding: 12px 16px; 
+            margin: 8px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .mistake-box { 
+            background: #fef2f2; 
+            border-left: 4px solid #ef4444; 
+            padding: 12px 16px; 
+            margin: 8px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .footer { 
+            margin-top: 40px; 
+            padding-top: 16px; 
+            border-top: 1px solid #e5e7eb; 
+            font-size: 12px; 
+            color: #9ca3af; 
+            text-align: center; 
+        }
+
+        @media print {
+            body { padding: 20px; }
+            h2 { page-break-after: avoid; }
+            .formula-box, .term-box, .tip-box, .mistake-box { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <h1>${chapter.name}</h1>
+    <p class="subtitle">${subject?.name || 'LearnBook'}</p>
+    <p class="date">Generated on ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+    
+    <h2>📖 Overview</h2>
+    <div class="overview">
+        <p>${summary.overview}</p>
+    </div>
+    
+    <h2>✅ Key Points</h2>
+    ${summary.keyPoints?.map(point => `<div class="key-point">${point}</div>`).join('') || '<p>No key points</p>'}
+    
+    ${summary.formulas && summary.formulas.length > 0 ? `
+    <h2>📐 Important Formulas</h2>
+    ${summary.formulas.map(f => `
+        <div class="formula-box">
+            <div class="formula-name">${f.name}</div>
+            <div class="formula-expr">${f.formula}</div>
+            <div class="formula-usage">${f.usage}</div>
+        </div>
+    `).join('')}
+    ` : ''}
+    
+    ${summary.importantTerms && summary.importantTerms.length > 0 ? `
+    <h2>📚 Important Terms</h2>
+    <div class="term-grid">
+        ${summary.importantTerms.map(t => `
+            <div class="term-box">
+                <div class="term-name">${t.term}</div>
+                <div class="term-def">${t.definition}</div>
+            </div>
+        `).join('')}
+    </div>
+    ` : ''}
+    
+    ${summary.examTips && summary.examTips.length > 0 ? `
+    <h2>💡 Exam Tips</h2>
+    ${summary.examTips.map(tip => `<div class="tip-box">${tip}</div>`).join('')}
+    ` : ''}
+    
+    ${summary.commonMistakes && summary.commonMistakes.length > 0 ? `
+    <h2>⚠️ Common Mistakes to Avoid</h2>
+    ${summary.commonMistakes.map(mistake => `<div class="mistake-box">${mistake}</div>`).join('')}
+    ` : ''}
+    
+    <div class="footer">
+        Generated by LearnBook AI • ${new Date().getFullYear()}
+    </div>
+</body>
+</html>
+            `.trim()
+
+            // Open print dialog with styled content
+            const printWindow = window.open('', '_blank', 'width=800,height=600')
+            if (printWindow) {
+                printWindow.document.write(printContent)
+                printWindow.document.close()
+                printWindow.focus()
+
+                // Wait for fonts to load then print
+                setTimeout(() => {
+                    printWindow.print()
+                    printWindow.close()
+                }, 500)
+            }
+        } catch (error) {
+            console.error('PDF export error:', error)
+            alert('Failed to export PDF. Please try again.')
+        } finally {
+            setIsExportingPdf(false)
+        }
+    }
 
     // Save Summary to Google Drive
     const handleSaveToDrive = async () => {
@@ -86,15 +256,18 @@ FORMULAS
 ${summary.formulas?.map(f => `- ${f.name}: ${f.formula}`).join('\n') || 'N/A'}
             `.trim()
 
-            await createGoogleDoc(
+            const result = await createGoogleDocInFolder(
                 session.provider_token,
-                `Study Notes: ${chapter.name}`,
+                `${subject?.name || 'Study'} - ${chapter.name}`,
                 content
             )
-            alert('Successfully saved notes to Google Drive!')
-        } catch (error) {
+
+            if (confirm('Notes saved to Google Drive! Open now?')) {
+                window.open(result.webViewLink, '_blank')
+            }
+        } catch (error: any) {
             console.error('Drive save error:', error)
-            alert('Failed to save to Drive. Check your permissions.')
+            alert(error.message || 'Failed to save to Drive. Check your permissions.')
         } finally {
             setIsSavingToDrive(false)
         }
@@ -150,6 +323,15 @@ ${summary.formulas?.map(f => `- ${f.name}: ${f.formula}`).join('\n') || 'N/A'}
                         progress: chapterData.progress || 0,
                         status: chapterData.status || 'not_started'
                     } as any)
+
+                    // Set completion status from database
+                    setIsCompleted(chapterData.status === 'completed')
+
+                    // Load saved notes from database if they exist
+                    if (chapterData.notes) {
+                        setSummary(chapterData.notes as Summary)
+                        setNotesSaved(true)
+                    }
                 }
 
                 // Get user profile for API calls
@@ -211,7 +393,7 @@ ${summary.formulas?.map(f => `- ${f.name}: ${f.formula}`).join('\n') || 'N/A'}
         }
     }
 
-    // Load AI summary
+    // Load AI summary and save to Supabase
     const loadSummary = async () => {
         if (!subject || !chapter || !data?.profile) return
 
@@ -232,6 +414,27 @@ ${summary.formulas?.map(f => `- ${f.name}: ${f.formula}`).join('\n') || 'N/A'}
             const result = await response.json()
             if (result.success && result.data) {
                 setSummary(result.data)
+
+                // Save notes to Supabase
+                try {
+                    const { createClient } = await import('@/lib/supabase/client')
+                    const supabase = createClient()
+
+                    const notesWithTimestamp = {
+                        ...result.data,
+                        generated_at: new Date().toISOString()
+                    }
+
+                    await supabase
+                        .from('subject_chapters')
+                        .update({ notes: notesWithTimestamp })
+                        .eq('id', chapterId)
+
+                    setNotesSaved(true)
+                    console.log('✅ Notes saved to Supabase')
+                } catch (saveError) {
+                    console.error('Failed to save notes to database:', saveError)
+                }
             }
         } catch (error) {
             console.error('Error loading summary:', error)
@@ -240,57 +443,40 @@ ${summary.formulas?.map(f => `- ${f.name}: ${f.formula}`).join('\n') || 'N/A'}
         }
     }
 
-    // Load saved data on mount
-    useEffect(() => {
-        if (chapterId && subjectId) {
-            // Load saved notes
-            const savedNotes = localStorage.getItem(`notes_${subjectId}_${chapterId}`)
-            if (savedNotes) {
-                setSummary(JSON.parse(savedNotes))
-                setNotesSaved(true)
+    // Save notes to Supabase (manual save button if needed)
+    const saveNotes = async () => {
+        if (!summary || !chapterId) return
+        try {
+            const { createClient } = await import('@/lib/supabase/client')
+            const supabase = createClient()
+
+            const notesWithTimestamp = {
+                ...summary,
+                generated_at: new Date().toISOString()
             }
 
-            // Load completion status
-            const savedCompletion = localStorage.getItem(`completed_${subjectId}_${chapterId}`)
-            if (savedCompletion === 'true') {
-                setIsCompleted(true)
-            }
+            await supabase
+                .from('subject_chapters')
+                .update({ notes: notesWithTimestamp })
+                .eq('id', chapterId)
+
+            setNotesSaved(true)
+        } catch (error) {
+            console.error('Failed to save notes:', error)
         }
-    }, [chapterId, subjectId])
-
-    // Save notes to localStorage
-    const saveNotes = () => {
-        if (!summary || !chapterId || !subjectId) return
-        localStorage.setItem(`notes_${subjectId}_${chapterId}`, JSON.stringify(summary))
-        setNotesSaved(true)
     }
 
     // Mark chapter as complete
-    const toggleComplete = () => {
+    const toggleComplete = async () => {
         if (!chapterId || !subjectId) return
         const newState = !isCompleted
-        localStorage.setItem(`completed_${subjectId}_${chapterId}`, String(newState))
         setIsCompleted(newState)
 
-        // Also update the main data
-        if (data) {
-            const updatedData = {
-                ...data,
-                subjects: data.subjects.map(s =>
-                    s.id === subjectId
-                        ? {
-                            ...s,
-                            chapters: s.chapters.map(c =>
-                                c.id === chapterId
-                                    ? { ...c, status: newState ? 'completed' as const : 'not_started' as const, progress: newState ? 100 : 0 }
-                                    : c
-                            )
-                        }
-                        : s
-                )
-            }
-            saveData(updatedData)
-        }
+        // Update database
+        await updateChapterProgress(chapterId, {
+            status: newState ? 'completed' : 'not_started',
+            progress: newState ? 100 : 0
+        })
     }
 
     // Generate NotebookLM export data
@@ -469,19 +655,6 @@ Generated by LearnBook AI
                                 <Sparkles className="w-4 h-4" />
                                 NotebookLM
                             </button>
-                            <button
-                                onClick={handleSaveToDrive}
-                                disabled={isSavingToDrive || !summary}
-                                className="btn-secondary flex items-center gap-2"
-                                title="Save Notes to Google Drive"
-                            >
-                                {isSavingToDrive ? (
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                    <HardDrive className="w-4 h-4" />
-                                )}
-                                Drive
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -566,7 +739,7 @@ Generated by LearnBook AI
                         <div className="card">
                             <h2 className="font-bold text-lg mb-3">Key Concepts</h2>
                             <div className="grid sm:grid-cols-2 gap-3">
-                                {chapter.concepts?.map((concept, index) => (
+                                {chapter.concepts?.map((concept: string, index: number) => (
                                     <div
                                         key={index}
                                         className="flex items-center gap-3 p-3 rounded-lg bg-secondary"
@@ -733,12 +906,54 @@ Generated by LearnBook AI
                             </div>
                         ) : summary ? (
                             <div className="space-y-6">
+                                {/* Notes Actions Bar */}
+                                <div className="flex items-center justify-between p-4 rounded-xl bg-secondary/50 border border-card-border">
+                                    <div className="flex items-center gap-2">
+                                        <FileText className="w-5 h-5 text-primary" />
+                                        <span className="font-medium">AI Study Notes</span>
+                                        {notesSaved && (
+                                            <span className="text-xs text-success flex items-center gap-1">
+                                                <Check className="w-3 h-3" />
+                                                Saved
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleExportPdf}
+                                            disabled={isExportingPdf}
+                                            className="btn-secondary flex items-center gap-2"
+                                            title="Export as PDF"
+                                        >
+                                            {isExportingPdf ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <FileDown className="w-4 h-4" />
+                                            )}
+                                            PDF
+                                        </button>
+                                        <button
+                                            onClick={handleSaveToDrive}
+                                            disabled={isSavingToDrive}
+                                            className="btn-primary flex items-center gap-2"
+                                            title="Save Notes to Google Drive"
+                                        >
+                                            {isSavingToDrive ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <HardDrive className="w-4 h-4" />
+                                            )}
+                                            Drive
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {/* Overview */}
                                 <div className="card">
                                     <h2 className="font-bold text-lg mb-3">Chapter Overview</h2>
-                                    <p className="text-foreground/80 leading-relaxed">
+                                    <div className="text-foreground/80 leading-relaxed">
                                         <FormattedText text={summary.overview} />
-                                    </p>
+                                    </div>
                                 </div>
 
                                 {/* Key Points */}
@@ -748,9 +963,9 @@ Generated by LearnBook AI
                                         {summary.keyPoints?.map((point, i) => (
                                             <li key={i} className="flex items-start gap-2">
                                                 <CheckCircle2 className="w-4 h-4 text-success mt-1 flex-shrink-0" />
-                                                <span className="text-foreground/80">
+                                                <div className="text-foreground/80">
                                                     <FormattedText text={point} />
-                                                </span>
+                                                </div>
                                             </li>
                                         ))}
                                     </ul>
@@ -763,15 +978,15 @@ Generated by LearnBook AI
                                         <div className="space-y-3">
                                             {summary.formulas.map((f, i) => (
                                                 <div key={i} className="p-4 rounded-lg border border-card-border bg-card-bg">
-                                                    <p className="font-bold text-foreground mb-2">
+                                                    <div className="font-bold text-foreground mb-2">
                                                         <FormattedText text={f.name} />
-                                                    </p>
+                                                    </div>
                                                     <p className="text-xl font-mono text-accent bg-secondary/50 p-2 rounded inline-block">
                                                         <MathFormula formula={f.formula} />
                                                     </p>
-                                                    <p className="text-sm text-foreground/70 mt-2">
+                                                    <div className="text-sm text-foreground/70 mt-2">
                                                         <FormattedText text={f.usage} />
-                                                    </p>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -785,12 +1000,12 @@ Generated by LearnBook AI
                                         <div className="grid sm:grid-cols-2 gap-3">
                                             {summary.importantTerms.map((t, i) => (
                                                 <div key={i} className="p-4 rounded-lg border border-card-border bg-card-bg">
-                                                    <p className="font-bold text-foreground mb-1">
+                                                    <div className="font-bold text-foreground mb-1">
                                                         <FormattedText text={t.term} />
-                                                    </p>
-                                                    <p className="text-sm text-foreground/80">
+                                                    </div>
+                                                    <div className="text-sm text-foreground/80">
                                                         <FormattedText text={t.definition} />
-                                                    </p>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>

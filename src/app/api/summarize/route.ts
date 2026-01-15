@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const { subject, chapter, concepts, board, classGrade } = body
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash'
+      model: 'gemini-2.5-flash-lite'
     })
 
     const prompt = `Create a comprehensive study summary for a student:

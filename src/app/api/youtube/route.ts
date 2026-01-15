@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Fallback: Use Gemini to suggest search terms and create search links
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
         const prompt = `For a student studying:
 - Subject: ${subject}

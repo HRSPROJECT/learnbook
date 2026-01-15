@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
+import { generateWithFallback } from '@/lib/ai-client'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { subject, chapter, concepts, board, classGrade } = body
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-lite'
-    })
 
     const prompt = `Create a comprehensive study summary for a student:
 - Subject: ${subject}
@@ -62,8 +56,8 @@ Return a JSON object with this structure:
 
 Make it exam-focused. Return ONLY the JSON object, no markdown.`
 
-    const result = await model.generateContent(prompt)
-    const text = result.response.text()
+    console.log('Generating summary with AI...')
+    const text = await generateWithFallback(prompt)
 
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
@@ -74,6 +68,14 @@ Make it exam-focused. Return ONLY the JSON object, no markdown.`
     return NextResponse.json({ success: true, data: null })
   } catch (error: any) {
     console.error('Summary error:', error)
+
+    if (error.message?.includes('429') || error.message?.includes('rate limit')) {
+      return NextResponse.json(
+        { success: false, error: 'API rate limit exceeded. Please try again in a minute.' },
+        { status: 429 }
+      )
+    }
+
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }
